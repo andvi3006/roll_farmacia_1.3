@@ -374,7 +374,8 @@
                     SHIFTS: 'du_shifts_v5',
                     HOLIDAYS: 'du_holidays_v5',
                     ATTENDANCE: 'du_attendance_v5',
-                    PAVILIONS: 'du_pavilions_v5'
+                    PAVILIONS: 'du_pavilions_v5',
+                    VACATIONS_REASONS: 'du_vacation_reasons'
                 };
                 this._initDefaultData();
             }
@@ -4088,7 +4089,8 @@
             URL.revokeObjectURL(url);
         }
 
-        // Exportar copia de seguridad (General o Específica)
+                // Exportar copia de seguridad (General o Específica)
+                // Exportar copia de seguridad (General o Específica)
         async function exportBackup(section) {
             const keys = db.STORAGE_KEYS;
             const dateStr = new Date().toISOString().split('T')[0];
@@ -4101,7 +4103,7 @@
                     data: {
                         workers: JSON.parse(localStorage.getItem(keys.WORKERS) || '[]'),
                         shifts: JSON.parse(localStorage.getItem(keys.SHIFTS) || '{}'),
-                        vacationReasons: JSON.parse(localStorage.getItem(keys.VACATIONS_REASONS) || '{}'),
+                        vacationReasons: JSON.parse(localStorage.getItem(keys.VACATIONS_REASONS) || 'du_vacation_reasons') || JSON.parse(localStorage.getItem('du_vacation_reasons') || '{}'),
                         holidays: JSON.parse(localStorage.getItem(keys.HOLIDAYS) || '{}'),
                         attendance: JSON.parse(localStorage.getItem(keys.ATTENDANCE) || '[]'),
                         pavilions: JSON.parse(localStorage.getItem(keys.PAVILIONS) || '[]')
@@ -4112,7 +4114,7 @@
             } else if (section === 'VACATIONS') {
                 // Exportación exclusiva de turnos VAC y sus motivos
                 const allShifts = JSON.parse(localStorage.getItem(keys.SHIFTS) || '{}');
-                const reasons = JSON.parse(localStorage.getItem(keys.VACATIONS_REASONS) || '{}');
+                const reasons = JSON.parse(localStorage.getItem(keys.VACATIONS_REASONS) || localStorage.getItem('du_vacation_reasons') || '{}');
                 const vacationShifts = {};
 
                 // Filtrar únicamente los días marcados como 'VAC'
@@ -4153,7 +4155,6 @@
                 showToast(`Copia de Seguridad de ${section} descargada con éxito.`);
             }
         }
-
         // Disparar diálogo de selección de archivo
         function triggerImport(section) {
             currentImportSection = section;
@@ -4162,6 +4163,7 @@
             fileInput.click();
         }
 
+        // Procesar lectura e importación del archivo cargado
         // Procesar lectura e importación del archivo cargado
         function handleImportFile(event) {
             const file = event.target.files[0];
@@ -4181,13 +4183,25 @@
                     if (currentImportSection === 'ALL') {
                         if (json.data.workers) localStorage.setItem(keys.WORKERS, JSON.stringify(json.data.workers));
                         if (json.data.shifts) localStorage.setItem(keys.SHIFTS, JSON.stringify(json.data.shifts));
-                        if (json.data.vacationReasons) localStorage.setItem(keys.VACATIONS_REASONS, JSON.stringify(json.data.vacationReasons));
+                        
+                        // RESTAURACIÓN Y REFRESCO DE MOTIVOS / COMENTARIOS EN MEMORIA
+                        if (json.data.vacationReasons) {
+                            localStorage.setItem(keys.VACATIONS_REASONS, JSON.stringify(json.data.vacationReasons));
+                            localStorage.setItem('du_vacation_reasons', JSON.stringify(json.data.vacationReasons));
+                            vacationReasons = json.data.vacationReasons; // <-- ASIGNACIÓN CLAVE
+                        } else {
+                            vacationReasons = {};
+                            localStorage.setItem(keys.VACATIONS_REASONS, JSON.stringify({}));
+                            localStorage.setItem('du_vacation_reasons', JSON.stringify({}));
+                        }
+
                         if (json.data.holidays) localStorage.setItem(keys.HOLIDAYS, JSON.stringify(json.data.holidays));
                         if (json.data.attendance) localStorage.setItem(keys.ATTENDANCE, JSON.stringify(json.data.attendance));
                         if (json.data.pavilions) localStorage.setItem(keys.PAVILIONS, JSON.stringify(json.data.pavilions));
+                        
                         showToast('¡Respaldo General restaurado con éxito!');
                     } else if (currentImportSection === 'VACATIONS') {
-                        // Importar las vacaciones unificándolas con los turnos actuales sin sobrescribir otros turnos (G12, M5, etc.)
+                        // Importar las vacaciones unificándolas con los turnos actuales sin sobrescribir otros turnos
                         const currentShifts = JSON.parse(localStorage.getItem(keys.SHIFTS) || '{}');
                         const importedVacShifts = json.data.shifts || {};
                         const importedReasons = json.data.vacationReasons || {};
@@ -4207,6 +4221,7 @@
                         // Actualizar la variable local y la persistencia de motivos
                         vacationReasons = { ...vacationReasons, ...importedReasons };
                         localStorage.setItem(keys.VACATIONS_REASONS, JSON.stringify(vacationReasons));
+                        localStorage.setItem('du_vacation_reasons', JSON.stringify(vacationReasons));
 
                         showToast('¡Vacaciones restauradas y unificadas con éxito!');
                     } else {
