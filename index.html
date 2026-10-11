@@ -3804,79 +3804,137 @@
             showToast('PDF generado con tablas separadas por rol.', true);
         }
         // ==========================================
-        // 3. HISTORIAL DE MARCAJE EN PDF POR DÍAS
-        // ==========================================
+        // 3. HISTORIAL DE MARCAJE EN PDF 
+    
         async function downloadAttendancePDF() {
             const { jsPDF } = window.jspdf;
+            // Orientación vertical A4 (210mm x 297mm)
             const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
 
             const filterDate = document.getElementById('attendance-date-filter')?.value || new Date().toISOString().split('T')[0];
             const logs = await db.getAttendanceLogs();
-            const filteredLogs = logs.filter(l => l.timestamp && l.timestamp.startsWith(filterDate));
+            const workers = await db.getWorkers();
 
-            // Cálculos de resumen
-            const totalMarcajes = filteredLogs.length;
-            const aTiempo = filteredLogs.filter(l => l.status === 'A Tiempo' || !l.status).length;
-            const tardanzas = filteredLogs.filter(l => l.status === 'Tardanza').length;
+            // 1. OBTENER TODOS LOS TRABAJADORES Y SUS MARCAJES EN LA FECHA
+            const yearMonth = filterDate.substring(0, 7);
+            const dayNumber = parseInt(filterDate.split('-')[2], 10);
+            const shifts = await db.getMonthlyShifts(yearMonth);
 
-            // Banner Superior
-            doc.setFillColor(13, 148, 136); // Teal
-            doc.rect(0, 0, 210, 22, 'F');
+            // Filtrar marcajes del día
+            const dayLogs = logs.filter(l => l.timestamp && l.timestamp.startsWith(filterDate));
+
+            // Evaluar estado para cada trabajador registrado
+            const rowsData = workers.map((w, index) => {
+                const workerShifts = shifts[w.id] || {};
+                const shiftScheduled = workerShifts[dayNumber] || 'OFF';
+
+                // Buscar log de entrada y salida
+                const inLog = dayLogs.find(l => (l.workerDni === w.dni || l.workerName === w.name) && l.type === 'ENTRADA');
+                const outLog = dayLogs.find(l => (l.workerDni === w.dni || l.workerName === w.name) && l.type === 'SALIDA');
+
+                let statusText = 'PUNTUAL';
+                let statusBg = [220, 252, 231]; // Verde claro
+                let statusFg = [22, 101, 52];
+
+                // Evaluación de puntualidad / tardanza / falta
+                if (shiftScheduled && shiftScheduled !== 'OFF' && shiftScheduled !== 'FER' && shiftScheduled !== 'VAC') {
+                    if (!inLog) {
+                        statusText = 'INASISTENCIA';
+                        statusBg = [254, 226, 226]; // Rojo claro
+                        statusFg = [153, 27, 27];
+                    } else {
+                        const shiftConfig = SHIFT_ENTRY_TIMES[shiftScheduled] || { hour: 8, minute: 0 };
+                        const timeParts = inLog.timestamp.includes('T') ? inLog.timestamp.split('T')[1] : inLog.timestamp.split(' ')[1];
+                        const [h, m] = (timeParts || '00:00').split(':').map(Number);
+                        const markedMins = h * 60 + m;
+                        const maxMins = shiftConfig.hour * 60 + shiftConfig.minute + 5; // 5 min tolerancia
+
+                        if (markedMins > maxMins) {
+                            statusText = `TARDANZA (${timeParts.substring(0, 5)})`;
+                            statusBg = [254, 243, 199]; // Ámbar/Amarillo
+                            statusFg = [146, 64, 14];
+                        }
+                    }
+                } else {
+                    statusText = shiftScheduled === 'VAC' ? 'VACACIONES' : (shiftScheduled === 'FER' ? 'FERIADO' : 'LIBRE');
+                    statusBg = [241, 245, 249];
+                    statusFg = [71, 85, 105];
+                }
+
+                const horaEntrada = inLog ? (inLog.timestamp.split(' ')[1] || inLog.timestamp.split('T')[1] || '').substring(0, 5) : '--:--';
+                const horaSalida = outLog ? (outLog.timestamp.split(' ')[1] || outLog.timestamp.split('T')[1] || '').substring(0, 5) : '--:--';
+
+                return {
+                    row: [
+                        (index + 1).toString(),
+                        w.name,
+                        w.dni || '-',
+                        shiftScheduled,
+                        horaEntrada,
+                        horaSalida,
+                        statusText
+                    ],
+                    statusBg,
+                    statusFg
+                };
+            });
+
+            // 2. ENCABEZADO INTEGRADO AL BORDE SUPERIOR (10 mm)
+            doc.setFillColor(13, 148, 136); // Teal principal
+            doc.rect(5, 5, 200, 9, 'F'); // Inicia a 5mm del borde superior
             doc.setTextColor(255, 255, 255);
-            doc.setFontSize(14);
+            doc.setFontSize(10);
             doc.setFont("helvetica", "bold");
-            doc.text('REPORTE DE MARCAJE Y ASISTENCIA', 14, 11);
-            doc.setFontSize(8);
+            doc.text(`REGISTRO DE MARCAJE DE ASISTENCIA - FECHA: ${filterDate}`, 8, 11);
+            doc.setFontSize(7.5);
             doc.setFont("helvetica", "normal");
-            doc.text(`Fecha del Reporte: ${filterDate} | Total Registros: ${totalMarcajes}`, 14, 17);
+            doc.text('Farmacia de Dosis Unitaria', 158, 11);
 
-            // Caja de Resumen Estadístico
-            doc.setDrawColor(226, 232, 240);
-            doc.setFillColor(248, 250, 252);
-            doc.roundedRect(14, 26, 182, 12, 2, 2, 'FD');
-            doc.setTextColor(30, 41, 59);
-            doc.setFontSize(8);
-            doc.setFont("helvetica", "bold");
-            doc.text(`Puntuales / A tiempo: ${aTiempo}`, 20, 33.5);
-            doc.setTextColor(225, 29, 72);
-            doc.text(`Tardanzas / Incidencias: ${tardanzas}`, 110, 33.5);
-
-            const body = filteredLogs.map((l, i) => [
-                (i + 1).toString(),
-                l.timestamp.split(' ')[1] || l.timestamp,
-                l.workerName,
-                l.workerDni || '-',
-                l.shiftScheduled || 'OFF',
-                l.type || 'Entrada',
-                l.status || 'A Tiempo',
-                l.method || 'Manual'
-            ]);
-
+            // 3. TABLA QUE APROVECHA AL MÁXIMO LOS BORDES (Página 1 garantizada)
             doc.autoTable({
-                head: [['N°', 'Hora', 'Personal', 'DNI', 'Turno Progr.', 'Tipo', 'Estado', 'Método']],
-                body: body.length > 0 ? body : [['-', '-', 'Sin registros de marcaje para la fecha seleccionada', '-', '-', '-', '-', '-']],
-                startY: 42,
-                styles: { fontSize: 8, cellPadding: 2.5, halign: 'center' },
-                columnStyles: {
-                    2: { halign: 'left', fontStyle: 'bold' }
+                head: [['N°', 'Nombres y Apellidos del Personal', 'DNI', 'Turno', 'Entrada', 'Salida', 'Estado / Condición']],
+                body: rowsData.map(r => r.row),
+                startY: 15, // Empieza inmediatamente debajo del banner
+                margin: { left: 5, right: 5, top: 5, bottom: 5 }, // Bordes extendidos al límite de la hoja
+                theme: 'grid',
+                styles: {
+                    fontSize: 7,             // Tamaño de letra optimizado
+                    cellPadding: 1.4,        // Balance perfecto: ni apretado ni grueso
+                    valign: 'middle',
+                    halign: 'center',
+                    lineColor: [203, 213, 225],
+                    lineWidth: 0.12
                 },
-                headStyles: { fillColor: [30, 41, 59] },
+                columnStyles: {
+                    0: { cellWidth: 10 },
+                    1: { cellWidth: 80, halign: 'left', fontStyle: 'bold' },
+                    2: { cellWidth: 25, fontStyle: 'bold' },
+                    3: { cellWidth: 18, fontStyle: 'bold' },
+                    4: { cellWidth: 21, fontStyle: 'bold', textColor: [16, 185, 129] },
+                    5: { cellWidth: 21, fontStyle: 'bold', textColor: [225, 29, 72] },
+                    6: { cellWidth: 25, fontStyle: 'bold' }
+                },
+                headStyles: {
+                    fillColor: [30, 41, 59], // Slate oscuro
+                    textColor: [255, 255, 255],
+                    fontStyle: 'bold',
+                    fontSize: 7.5,
+                    cellPadding: 1.6
+                },
                 didParseCell: function(data) {
+                    // Colores dinámicos para la columna Estado
                     if (data.section === 'body' && data.column.index === 6) {
-                        const status = data.cell.raw;
-                        if (status === 'Tardanza') {
-                            data.cell.styles.textColor = [225, 29, 72]; // Rojo
-                            data.cell.styles.fontStyle = 'bold';
-                        } else if (status === 'A Tiempo') {
-                            data.cell.styles.textColor = [16, 185, 129]; // Verde
-                            data.cell.styles.fontStyle = 'bold';
+                        const item = rowsData[data.row.index];
+                        if (item) {
+                            data.cell.styles.fillColor = item.statusBg;
+                            data.cell.styles.textColor = item.statusFg;
                         }
                     }
                 }
             });
 
-            doc.save(`Reporte_Asistencia_${filterDate}.pdf`);
-            showToast('PDF detallado de marcación descargado.', true);
+            doc.save(`Marcaje_Asistencia_${filterDate}.pdf`);
+            showToast('PDF generado correctamente en 1 sola hoja.', true);
         }
 
         // ==========================================
