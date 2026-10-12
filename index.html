@@ -2020,6 +2020,8 @@
             const yearMonth = getYearMonthKey();
             const year = currentDate.getFullYear();
             const month = currentDate.getMonth();
+            // Arreglo para mapear el día devuelto por getDay() (0 = Domingo, 1 = Lunes, ..., 6 = Sábado)
+            const dayShortNames = ['Do', 'Lu', 'Ma', 'Mi', 'Ju', 'Vi', 'Sá'];
             const totalDays = new Date(year, month + 1, 0).getDate();
 
             const workers = await db.getWorkers();
@@ -2045,14 +2047,15 @@
             for (let d = 1; d <= totalDays; d++) {
                 const dayDate = new Date(year, month, d);
                 const isSunday = dayDate.getDay() === 0;
+                const dayName = dayShortNames[dayDate.getDay()]; // <--- Obtenemos la abreviatura del día
                 const monthStr = String(month + 1).padStart(2, '0');
                 const dayStr = String(d).padStart(2, '0');
                 const dateKey = `${year}-${monthStr}-${dayStr}`;
                 const isHoliday = !!holidays[dateKey];
 
-                // Días normales en azul/verde petróleo oscuro para mejor lectura
+                // Estilos según el tipo de día
                 let cellClass = 'bg-teal-800 text-white';
-                let titleText = `Día ${d}`;
+                let titleText = `${dayName} ${d}`;
 
                 if (isHoliday) {
                     cellClass = 'bg-amber-400 text-slate-950 font-black cursor-pointer border-x-2 border-amber-300';
@@ -2064,7 +2067,11 @@
                     cellClass += ' cursor-pointer hover:bg-teal-700';
                 }
 
-                headerHTML += `<th onclick="toggleHolidayHeader(${d})" class="w-8 p-1 text-center text-[10px] ${cellClass}" title="${escapeHTML(titleText)}">${d}<br>${isHoliday ? 'FER' : (isSunday ? 'DOM' : '')}</th>`;
+                // AHORA MUESTRA EL DÍA ARRIBA Y EL NÚMERO ABAJO CON UN ETIQUETADO CLARO
+                headerHTML += `<th onclick="toggleHolidayHeader(${d})" class="w-8 p-1 text-center text-[10px] ${cellClass}" title="${escapeHTML(titleText)}">
+                    <span class="block font-black uppercase text-[9px] opacity-90">${dayName}</span>
+                    <span class="block text-[11px]">${d}</span>
+                </th>`;
             }
 
             headerHTML += `<th class="p-2 text-center min-w-[65px] bg-teal-950 text-amber-300">TOTAL HRS</th></tr></thead>`;
