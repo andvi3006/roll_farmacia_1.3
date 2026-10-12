@@ -941,12 +941,6 @@
                             <option value="2026" selected>Año 2026</option>
                             <option value="2027">Año 2027</option>
                         </select>
-
-                        <!-- Copia de Seguridad Vacaciones -->
-                        <button onclick="exportBackup('SHIFTS')" class="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow transition flex items-center gap-1.5" title="Descargar Copia de Seguridad de Vacaciones/Horarios">
-                            <i class="fa-solid fa-database"></i> Copia de Seguridad
-                        </button>
-
                         <!-- Botón Abrir Formulario -->
                         <button onclick="openAssignVacationModal()" class="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white font-bold text-xs rounded-xl shadow transition flex items-center gap-1.5">
                             <i class="fa-solid fa-plus"></i> Programar Vacaciones
@@ -954,7 +948,7 @@
                     </div>
                 </div>
 
-                <!-- TABLA CON ESTILO IDÉNTICO A PERSONAL -->
+                <!-- TABLA CON ESTILO  -->
                 <div class="overflow-x-auto">
                     <table class="w-full text-left text-xs text-slate-600 border border-slate-200 rounded-xl overflow-hidden">
                         <thead class="bg-gradient-to-r from-teal-600 to-sky-600 text-white font-extrabold uppercase border-b-2 border-teal-700">
@@ -2077,10 +2071,13 @@
 
             let bodyHTML = `<tbody>`;
 
-            const renderGroup = (groupTitle, groupWorkers) => {
+            // Función auxiliar para renderizar cada grupo de rol con sus subtotales agrupados inmediatamente debajo
+            const renderGroupWithSubtotals = (groupTitle, groupWorkers, roleType, totalDays, shifts) => {
                 if (groupWorkers.length === 0) return '';
+
                 let html = `<tr class="bg-slate-200 font-bold text-slate-800 text-left"><td colspan="${totalDays + 3}" class="p-2 pl-3 bg-slate-200 uppercase tracking-wider text-[11px] border-y border-slate-300">${escapeHTML(groupTitle)}</td></tr>`;
 
+                // 1. Renderizar lista de trabajadores del rol
                 groupWorkers.forEach((w, index) => {
                     const workerShifts = shifts[w.id] || {};
                     let workerTotalHours = 0;
@@ -2117,7 +2114,6 @@
                             shiftClass = `shift-${displayCode}`;
                         }
 
-                        // Aplica el fondo fluorescente cuando el día es Feriado o Domingo y el turno está libre
                         const sundayBg = (isSunday && (!shift || shift === 'OFF') && !attEval) ? 'shift-SUNDAY' : '';
                         const holidayBg = (isHoliday && (!shift || shift === 'OFF') && !attEval) ? 'shift-HOLIDAY' : '';
                         const titleTag = attEval ? `Día ${d}: ${displayCode} - ${attEval.label}` : `Día ${d}: ${shift || 'Descanso'}`;
@@ -2136,6 +2132,125 @@
                     html += `</tr>`;
                 });
 
+                // 2. Subtotales inmediatos debajo del grupo según el rol
+                if (roleType === 'QF') {
+                    // Subtotal QF Guardia G12
+                    html += `<tr class="bg-purple-100/50 font-bold border-t border-purple-200 text-purple-950"><td colspan="2" class="p-1 text-right sticky-col bg-purple-100/90 text-[10px]">QF Guardia G12 (12h):</td>`;
+                    for (let d = 1; d <= totalDays; d++) {
+                        let cnt = groupWorkers.reduce((acc, w) => acc + ((shifts[w.id] || {})[d] === 'G12' ? 1 : 0), 0);
+                        html += `<td class="p-1 font-mono text-center text-purple-800 ${cnt > 0 ? 'bg-purple-200/60 font-black' : ''}">${cnt}</td>`;
+                    }
+                    html += `<td class="bg-purple-200/50"></td></tr>`;
+
+                    // Subtotal QF Mañana (M3 / M5)
+                    html += `<tr class="bg-purple-100/50 font-bold text-purple-950"><td colspan="2" class="p-1 text-right sticky-col bg-purple-100/90 text-[10px]">QF Mañana (M3 / M5):</td>`;
+                    for (let d = 1; d <= totalDays; d++) {
+                        let cnt = groupWorkers.reduce((acc, w) => {
+                            const s = (shifts[w.id] || {})[d];
+                            return acc + (s === 'M3' || s === 'M5' ? 1 : 0);
+                        }, 0);
+                        html += `<td class="p-1 font-mono text-center text-blue-700 ${cnt > 0 ? 'bg-blue-100/60 font-black' : ''}">${cnt}</td>`;
+                    }
+                    html += `<td class="bg-purple-200/50"></td></tr>`;
+
+                    // Subtotal QF Tarde D3
+                    html += `<tr class="bg-purple-100/50 font-bold text-purple-950"><td colspan="2" class="p-1 text-right sticky-col bg-purple-100/90 text-[10px]">QF Tarde (D3):</td>`;
+                    for (let d = 1; d <= totalDays; d++) {
+                        let cnt = groupWorkers.reduce((acc, w) => acc + ((shifts[w.id] || {})[d] === 'D3' ? 1 : 0), 0);
+                        html += `<td class="p-1 font-mono text-center text-amber-700 ${cnt > 0 ? 'bg-amber-100/60 font-black' : ''}">${cnt}</td>`;
+                    }
+                    html += `<td class="bg-purple-200/50"></td></tr>`;
+
+                    // Total QF Activos / Día
+                    html += `<tr class="bg-purple-200/90 font-black text-purple-950 border-b-2 border-purple-300"><td colspan="2" class="p-1.5 text-right uppercase sticky-col bg-purple-300 text-[10px]"> Total QF Activos / Día:</td>`;
+                    for (let d = 1; d <= totalDays; d++) {
+                        let total = groupWorkers.reduce((acc, w) => {
+                            const s = (shifts[w.id] || {})[d];
+                            return acc + (s && s !== 'OFF' && s !== 'FER' && s !== 'VAC' ? 1 : 0);
+                        }, 0);
+                        html += `<td class="p-1 font-mono text-center text-purple-950 text-xs font-black bg-purple-200">${total}</td>`;
+                    }
+                    html += `<td class="bg-purple-300"></td></tr>`;
+
+                } else if (roleType === 'TEC') {
+                    // Subtotal TEC Guardia G12
+                    html += `<tr class="bg-teal-100/50 font-bold border-t border-teal-200 text-teal-950"><td colspan="2" class="p-1 text-right sticky-col bg-teal-100/90 text-[10px]">TEC Guardia G12:</td>`;
+                    for (let d = 1; d <= totalDays; d++) {
+                        let cnt = groupWorkers.reduce((acc, w) => acc + ((shifts[w.id] || {})[d] === 'G12' ? 1 : 0), 0);
+                        html += `<td class="p-1 font-mono text-center text-purple-800 ${cnt > 0 ? 'bg-purple-200/60 font-black' : ''}">${cnt}</td>`;
+                    }
+                    html += `<td class="bg-teal-200/50"></td></tr>`;
+
+                    // Subtotal TEC Mañana M5
+                    html += `<tr class="bg-teal-100/50 font-bold text-teal-950"><td colspan="2" class="p-1 text-right sticky-col bg-teal-100/90 text-[10px]">TEC Mañana M5 (8am-2pm):</td>`;
+                    for (let d = 1; d <= totalDays; d++) {
+                        let cnt = groupWorkers.reduce((acc, w) => acc + ((shifts[w.id] || {})[d] === 'M5' ? 1 : 0), 0);
+                        html += `<td class="p-1 font-mono text-center text-sky-700 ${cnt > 0 ? 'bg-sky-100/60 font-black' : ''}">${cnt}</td>`;
+                    }
+                    html += `<td class="bg-teal-200/50"></td></tr>`;
+
+                    // Subtotal TEC Mañana M3 / Tarde D3
+                    html += `<tr class="bg-teal-100/50 font-bold text-teal-950"><td colspan="2" class="p-1 text-right sticky-col bg-teal-100/90 text-[10px]">TEC Mañana M3 / Tarde D3:</td>`;
+                    for (let d = 1; d <= totalDays; d++) {
+                        let cnt = groupWorkers.reduce((acc, w) => {
+                            const s = (shifts[w.id] || {})[d];
+                            return acc + (s === 'M3' || s === 'D3' ? 1 : 0);
+                        }, 0);
+                        html += `<td class="p-1 font-mono text-center text-amber-700 ${cnt > 0 ? 'bg-amber-100/60 font-black' : ''}">${cnt}</td>`;
+                    }
+                    html += `<td class="bg-teal-200/50"></td></tr>`;
+
+                    // Total TEC Activos / Día
+                    html += `<tr class="bg-teal-200/90 font-black text-teal-950 border-b-2 border-teal-300"><td colspan="2" class="p-1.5 text-right uppercase sticky-col bg-teal-300 text-[10px]"> Total TEC Activos / Día:</td>`;
+                    for (let d = 1; d <= totalDays; d++) {
+                        let total = groupWorkers.reduce((acc, w) => {
+                            const s = (shifts[w.id] || {})[d];
+                            return acc + (s && s !== 'OFF' && s !== 'FER' && s !== 'VAC' ? 1 : 0);
+                        }, 0);
+                        html += `<td class="p-1 font-mono text-center text-teal-950 text-xs font-black bg-teal-200">${total}</td>`;
+                    }
+                    html += `<td class="bg-teal-300"></td></tr>`;
+
+                } else if (roleType === 'DIG') {
+                    // Subtotal DIG Guardia G12
+                    html += `<tr class="bg-sky-100/50 font-bold border-t border-sky-200 text-sky-950"><td colspan="2" class="p-1 text-right sticky-col bg-sky-100/90 text-[10px]">DIG Guardia G12:</td>`;
+                    for (let d = 1; d <= totalDays; d++) {
+                        let cnt = groupWorkers.reduce((acc, w) => acc + ((shifts[w.id] || {})[d] === 'G12' ? 1 : 0), 0);
+                        html += `<td class="p-1 font-mono text-center text-purple-800 ${cnt > 0 ? 'bg-purple-200/60 font-black' : ''}">${cnt}</td>`;
+                    }
+                    html += `<td class="bg-sky-200/50"></td></tr>`;
+
+                    // Subtotal DIG Mañana (M3 / M5)
+                    html += `<tr class="bg-sky-100/50 font-bold text-sky-950"><td colspan="2" class="p-1 text-right sticky-col bg-sky-100/90 text-[10px]">DIG Mañana (M3 / M5):</td>`;
+                    for (let d = 1; d <= totalDays; d++) {
+                        let cnt = groupWorkers.reduce((acc, w) => {
+                            const s = (shifts[w.id] || {})[d];
+                            return acc + (s === 'M3' || s === 'M5' ? 1 : 0);
+                        }, 0);
+                        html += `<td class="p-1 font-mono text-center text-blue-700 ${cnt > 0 ? 'bg-blue-100/60 font-black' : ''}">${cnt}</td>`;
+                    }
+                    html += `<td class="bg-sky-200/50"></td></tr>`;
+
+                    // Subtotal DIG Tarde D3
+                    html += `<tr class="bg-sky-100/50 font-bold text-sky-950"><td colspan="2" class="p-1 text-right sticky-col bg-sky-100/90 text-[10px]">DIG Tarde (D3):</td>`;
+                    for (let d = 1; d <= totalDays; d++) {
+                        let cnt = groupWorkers.reduce((acc, w) => acc + ((shifts[w.id] || {})[d] === 'D3' ? 1 : 0), 0);
+                        html += `<td class="p-1 font-mono text-center text-amber-700 ${cnt > 0 ? 'bg-amber-100/60 font-black' : ''}">${cnt}</td>`;
+                    }
+                    html += `<td class="bg-sky-200/50"></td></tr>`;
+
+                    // Total DIG Activos / Día
+                    html += `<tr class="bg-sky-200/90 font-black text-sky-950 border-b-2 border-sky-300"><td colspan="2" class="p-1.5 text-right uppercase sticky-col bg-sky-300 text-[10px]"> Total DIG Activos / Día:</td>`;
+                    for (let d = 1; d <= totalDays; d++) {
+                        let total = groupWorkers.reduce((acc, w) => {
+                            const s = (shifts[w.id] || {})[d];
+                            return acc + (s && s !== 'OFF' && s !== 'FER' && s !== 'VAC' ? 1 : 0);
+                        }, 0);
+                        html += `<td class="p-1 font-mono text-center text-sky-950 text-xs font-black bg-sky-200">${total}</td>`;
+                    }
+                    html += `<td class="bg-sky-300"></td></tr>`;
+                }
+
                 return html;
             };
 
@@ -2143,37 +2258,27 @@
             const tecWorkers = filteredWorkers.filter(w => w.role === 'TEC' && !w.name.startsWith('QF'));
             const digWorkers = filteredWorkers.filter(w => w.role === 'DIG' || w.name.startsWith('Dig'));
 
-            bodyHTML += renderGroup('Químicos Farmacéuticos (QF)', qfWorkers);
-            bodyHTML += renderGroup('Técnicos en Farmacia (TEC)', tecWorkers);
-            bodyHTML += renderGroup('Digitadores (DIG)', digWorkers);
+            bodyHTML += renderGroupWithSubtotals('Químicos Farmacéuticos (QF)', qfWorkers, 'QF', totalDays, shifts);
+            bodyHTML += renderGroupWithSubtotals('Técnicos en Farmacia (TEC)', tecWorkers, 'TEC', totalDays, shifts);
+            bodyHTML += renderGroupWithSubtotals('Digitadores (DIG)', digWorkers, 'DIG', totalDays, shifts);
+            bodyHTML += `</tbody>`;
 
-            let footerHTML = `<tfoot class="bg-slate-100 font-bold border-t-2 border-slate-300">`;
-            
-            footerHTML += `<tr><td colspan="2" class="p-1.5 text-right uppercase text-purple-900 sticky-col bg-slate-100 text-[10px]">QFs en Guardia 12h:</td>`;
+            // Pie de tabla con ÚNICAMENTE la fila del Total General Diario
+            let footerHTML = `<tfoot class="bg-slate-900 text-white font-black border-t-2 border-slate-400">`;
+            footerHTML += `<tr class="bg-slate-900 text-white font-black"><td colspan="2" class="p-2 text-right uppercase sticky-col bg-slate-950 text-amber-300 text-[11px]"> TOTAL PERSONAL / DÍA:</td>`;
             for (let d = 1; d <= totalDays; d++) {
-                let qfGuardiaCount = 0;
-                qfWorkers.forEach(w => {
-                    const shift = (shifts[w.id] || {})[d];
-                    if (shift === 'G12' || shift === 'M3') qfGuardiaCount++;
-                });
-                footerHTML += `<td class="p-1 font-mono text-center text-purple-700 ${qfGuardiaCount > 0 ? 'bg-purple-50' : ''}">${qfGuardiaCount}</td>`;
+                let totalDayWorkers = filteredWorkers.reduce((acc, w) => {
+                    const s = (shifts[w.id] || {})[d];
+                    return acc + (s && s !== 'OFF' && s !== 'FER' && s !== 'VAC' ? 1 : 0);
+                }, 0);
+                footerHTML += `<td class="p-1 font-mono text-center text-amber-300 font-black text-xs bg-slate-900">${totalDayWorkers}</td>`;
             }
-            footerHTML += `<td class="bg-slate-200"></td></tr>`;
-
-            footerHTML += `<tr><td colspan="2" class="p-1.5 text-right uppercase text-sky-900 sticky-col bg-slate-100 text-[10px]">Técnicos Mañana M5 (8am-2pm):</td>`;
-            for (let d = 1; d <= totalDays; d++) {
-                let tecMananaCount = 0;
-                tecWorkers.forEach(w => {
-                    const shift = (shifts[w.id] || {})[d];
-                    if (shift === 'M5') tecMananaCount++;
-                });
-                footerHTML += `<td class="p-1 font-mono text-center text-sky-700 ${tecMananaCount > 0 ? 'bg-sky-50' : ''}">${tecMananaCount}</td>`;
-            }
-            footerHTML += `<td class="bg-slate-200"></td></tr></tfoot>`;
+            footerHTML += `<td class="bg-slate-950"></td></tr></tfoot>`;
 
             table.innerHTML = headerHTML + bodyHTML + footerHTML;
         }
 
+        
         async function processAttendanceRegistration(worker, type, method) {
             const now = new Date();
             const year = now.getFullYear();
